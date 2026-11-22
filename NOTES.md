@@ -36,3 +36,17 @@
 34. JSON insert requires integer position in [0, line count] and string new_str; split insertion like patch lines; preserve original final break.
 35. Wrong JSON command or missing/mistyped required key is a parse fault.
 36. Edits see earlier successful changes. Check every path in an edit for safety before anything else; a failed edit rolls back and later edits still run. Any failure prevents all writes; check prevents writes even on success.
+
+## Hardening baseline and interpretation
+
+- Baseline commands: `node check.ts /tmp/kit_mend/hidden-spec-cli-01-run-20261122-kit/program/generator/practice.json`
+  passed 100/100; `node tests/run.ts` passed 215/215.
+- The first coverage expansion exercises invocation, precedence, JSON validation,
+  unsafe segments, UTF-8 sorting, mixed line breaks, and all three matching tiers
+  independently in unified, SEARCH/REPLACE and V4A.
+- No original test has been weakened. Two new fixture expectations were corrected
+  to the specification: a standalone `[]` is array form with no edits (`parse 1`,
+  §§2/9), not a bad JSON Lines object; an old line containing a literal trailing
+  CR requires two CRs before the patch LF because §3 removes exactly one.
+- Safety is the lexical predicate in §3. The specification does not mention
+  symlinks; no additional symlink refusal or error code is invented.

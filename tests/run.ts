@@ -2264,6 +2264,138 @@ const cases: TestCase[] = [
   ),
 ];
 
+// Sentence-level hardening: SPEC §§1–5, 9. Each matrix row is an independent
+// invocation with exact stdout and a byte-for-byte comparison of the entire tree.
+cases.push(
+  tc('usage/duplicate-strict', 'usage', ['--strict', '--strict'], '', {}, 2, 'error: usage\n'),
+  tc('usage/short-option', 'usage', ['-c'], '', {}, 2, 'error: usage\n'),
+  tc('usage/second-dash-dash-is-positional', 'usage', ['--', '--', 'x'], '', {}, 2, 'error: usage\n'),
+  tc('patch/no-patch-before-format', 'patch', ['--format=json', 'absent'], '', {}, 2, 'error: no-patch\n'),
+  tc('usage/positional-before-options', 'usage', ['p', '--strict', '--format=json'], null,
+    { p: jsonLines({ command: 'create', path: 'f', file_text: 'x' }) }, 0, 'A f\nok: 1 file\n', { f: 'x' }),
+  tc('usage/options-interleaved', 'usage', ['--format=json', 'p', '--strict', '--check'], null,
+    { p: jsonLines({ command: 'create', path: 'nested/f', file_text: 'x' }) }, 0, 'A nested/f\nok: 1 file\n'),
+  tc('format/json-before-search-and-unified', 'format', [], lines('{bad', 'f', '<<<<<<< SEARCH',
+    'x', '=======', 'y', '>>>>>>> REPLACE', 'diff --git a/f b/f'), {}, 2, 'error: parse 1\n'),
+  tc('format/v4a-before-search-and-unified', 'format', [], lines('*** Begin Patch', '<<<<<<< SEARCH',
+    'diff --git a/f b/f', '*** End Patch'), {}, 2, 'error: parse 2\n'),
+  tc('format/leading-search-whitespace-is-not-marker', 'format', [],
+    lines('f', ' <<<<<<< SEARCH', 'x', '=======', 'y', '>>>>>>> REPLACE'), {}, 2, 'error: format\n'),
+  tc('format/unpaired-header-is-not-detected', 'format', [], lines('--- f', 'prose'), {}, 2, 'error: format\n'),
+  tc('format/explicit-auto', 'format', ['--format=auto'],
+    jsonLines({ command: 'create', path: 'f', file_text: '' }), {}, 0, 'A f\nok: 1 file\n', { f: '' }),
+  tc('format/named-json-empty-array', 'format', [], '\n\n[]\n', {}, 2, 'error: parse 1\n'),
+  tc('format/named-search-no-edit', 'format', ['--format=search-replace'], 'prose\n', {}, 2, 'error: parse 1\n'),
+  tc('format/named-unified-no-edit', 'format', ['--format=unified'], 'prose\n', {}, 2, 'error: parse 1\n'),
+  tc('format/v4a-no-edit', 'format', [], lines('*** Begin Patch', '*** End Patch'), {}, 2, 'error: parse 1\n'),
+  tc('json/array-syntax-fault-start-line', 'json', [], '\n \n[\n{}\n,]\n', {}, 2, 'error: parse 3\n'),
+  tc('json/lines-multiline-object-fault', 'json', [], '\n{\n"command":"create"\n}\n', {}, 2, 'error: parse 2\n'),
+  tc('json/lines-later-fault-after-blanks', 'json', [],
+    '\n' + jsonLines({ command: 'create', path: 'f', file_text: 'x' }) + '\nfalse\n',
+    {}, 2, 'error: parse 4\n'),
+  tc('json/str-replace-missing', 'json', [],
+    jsonLines({ command: 'str_replace', path: 'f', old_str: 'x' }), {}, 1, 'error: missing f\nfailed: 1 of 1 edits\n'),
+  tc('json/str-replace-no-match', 'json', [],
+    jsonLines({ command: 'str_replace', path: 'f', old_str: 'z' }), { f: 'x' }, 1, 'error: no-match f\nfailed: 1 of 1 edits\n'),
+  tc('json/str-replace-newline-bytes', 'json', ['--strict'],
+    jsonLines({ command: 'str_replace', path: 'f', old_str: 'a\nb\n', new_str: 'c' }),
+    { f: 'a\nb\n' }, 0, 'M f\nok: 1 file\n', { f: 'c' }),
+  tc('json/str-replace-crlf-both-strings', 'json', [],
+    jsonLines({ command: 'str_replace', path: 'f', old_str: 'a\r\nb', new_str: 'c\r\nd\nz' }),
+    { f: 'a\r\nb' }, 0, 'M f\nok: 1 file\n', { f: 'c\r\nd\r\nz' }),
+  tc('json/str-replace-lf-does-not-normalize-strings', 'json', [],
+    jsonLines({ command: 'str_replace', path: 'f', old_str: 'a\r\nb' }),
+    { f: 'a\nb\n' }, 1, 'error: no-match f\nfailed: 1 of 1 edits\n'),
+  tc('json/str-replace-crlf-normalizes-every-lf', 'json', [],
+    jsonLines({ command: 'str_replace', path: 'f', old_str: 'a', new_str: 'A' }),
+    { f: 'a\r\nb\nc\r\n' }, 0, 'M f\nok: 1 file\n', { f: 'A\r\nb\r\nc\r\n' }),
+  tc('json/insert-negative-is-no-match', 'json', [],
+    jsonLines({ command: 'insert', path: 'f', insert_line: -1, new_str: 'x' }),
+    { f: 'a\n' }, 1, 'error: no-match f\nfailed: 1 of 1 edits\n'),
+  tc('json/insert-empty-file-has-zero-lines', 'json', [],
+    jsonLines({ command: 'insert', path: 'f', insert_line: 1, new_str: 'x' }),
+    { f: '' }, 1, 'error: no-match f\nfailed: 1 of 1 edits\n'),
+  tc('json/insert-removes-only-one-trailing-cr', 'json', [],
+    jsonLines({ command: 'insert', path: 'f', insert_line: 0, new_str: 'a\r\r\nb\r' }),
+    { f: '' }, 0, 'M f\nok: 1 file\n', { f: 'a\r\nb' }),
+  tc('json/insert-mixed-break-file-splits-at-first-break-style', 'json', [],
+    jsonLines({ command: 'insert', path: 'f', insert_line: 2, new_str: 'z' }),
+    { f: 'a\r\nb\nc' }, 0, 'M f\nok: 1 file\n', { f: 'a\r\nb\nc\r\nz' }),
+  tc('json/insert-lf-first-keeps-later-carriage-return', 'json', [],
+    jsonLines({ command: 'insert', path: 'f', insert_line: 2, new_str: 'z' }),
+    { f: 'a\nb\r\nc' }, 0, 'M f\nok: 1 file\n', { f: 'a\nb\r\nz\nc' }),
+  tc('output/utf8-not-utf16-order', 'output', [], jsonLines(
+    { command: 'create', path: '\u{10000}', file_text: 'x' },
+    { command: 'create', path: '\ue000', file_text: 'x' },
+    { command: 'create', path: 'é', file_text: 'x' }),
+    {}, 0, 'A é\nA \ue000\nA \u{10000}\nok: 3 files\n', { é: 'x', '\ue000': 'x', '\u{10000}': 'x' }),
+);
+
+for (const [name, value] of [
+  ['null', null], ['number', 1], ['string', 'x'], ['nested-array', []],
+  ['missing-path', { command: 'create', file_text: 'x' }],
+  ['number-path', { command: 'create', path: 2, file_text: 'x' }],
+  ['null-path', { command: 'create', path: null, file_text: 'x' }],
+  ['missing-command', { path: 'f' }], ['number-command', { command: 2, path: 'f' }],
+  ['unknown-command', { command: 'delete', path: 'f' }],
+  ['null-file-text', { command: 'create', path: 'f', file_text: null }],
+  ['missing-old', { command: 'str_replace', path: 'f' }],
+  ['number-old', { command: 'str_replace', path: 'f', old_str: 2 }],
+  ['null-new', { command: 'str_replace', path: 'f', old_str: 'x', new_str: null }],
+  ['missing-insert-line', { command: 'insert', path: 'f', new_str: 'x' }],
+  ['string-insert-line', { command: 'insert', path: 'f', insert_line: '0', new_str: 'x' }],
+  ['missing-insert-new', { command: 'insert', path: 'f', insert_line: 0 }],
+  ['null-insert-new', { command: 'insert', path: 'f', insert_line: 0, new_str: null }],
+] as const) {
+  cases.push(tc(`json/fault-${name}-array`, 'json', [], '\n[' + JSON.stringify(value) + ']\n',
+    {}, 2, 'error: parse 2\n'));
+  cases.push(tc(`json/fault-${name}-line`, 'json', ['--format=json'], '\n' + JSON.stringify(value) + '\n',
+    {}, 2, name === 'nested-array' ? 'error: parse 1\n' : 'error: parse 2\n'));
+}
+
+for (const path of ['', '/absolute', 'a\\b', 'a//b', 'a/./b', 'a/../b', './a', 'a/', 'a/..', '.']) {
+  cases.push(tc(`paths/unsafe-${JSON.stringify(path)}`, 'paths', [],
+    jsonLines({ command: 'insert', path, insert_line: 0, new_str: 'x' }),
+    {}, 1, `error: unsafe ${path}\nfailed: 1 of 1 edits\n`));
+}
+for (const path of ['a b', '.../file', 'a:b', 'tab\tfile', ' space ']) {
+  cases.push(tc(`paths/safe-${JSON.stringify(path)}`, 'paths', [],
+    jsonLines({ command: 'create', path, file_text: 'x' }),
+    {}, 0, `A ${path}\nok: 1 file\n`, { [path]: 'x' }));
+}
+
+// The same O/N tests exercise all three formats' shared tier contract (§5).
+function lineEdit(format: string, old: string[], next: string[]): string {
+  if (format === 'search') return lines('f', '<<<<<<< SEARCH', ...old, '=======', ...next, '>>>>>>> REPLACE');
+  const body = [...old.map((s) => '-' + s), ...next.map((s) => '+' + s)];
+  return format === 'unified'
+    ? lines('--- f', '+++ f', '@@ -1 +1 @@', ...body)
+    : lines('*** Begin Patch', '*** Update File: f', '@@', ...body, '*** End Patch');
+}
+for (const format of ['unified', 'search', 'v4a']) {
+  const add = (name: string, old: string[], next: string[], before: string, after: string | null, strict = false): void => {
+    cases.push(tc(`tiers/${format}/${name}`, 'tiers', strict ? ['--strict'] : [],
+      lineEdit(format, old, next), { f: before }, after === null ? 1 : 0,
+      after === null ? 'error: no-match f\nfailed: 1 of 1 edits\n' : after === before ? 'ok: 0 files\n' : 'M f\nok: 1 file\n',
+      after === null ? undefined : { f: after }));
+  };
+  add('exact-before-earlier-drift', ['x'], ['y'], lines(' x', 'x'), lines(' x', 'y'));
+  add('tier1-before-earlier-tier2', ['x\t'], ['y'], lines(' x', 'x '), lines(' x', 'y'));
+  add('tier1-tabs-and-spaces', ['x \t'], ['y\t '], 'x\t \n', 'y\t \n');
+  add('tier2-tabs-are-prefixes-not-columns', ['\told'], ['\tnew', '\t\tchild', '  literal', '\t ', ''],
+    '  old\n', '  new\n  \tchild\n  literal\n\t \n\n');
+  add('tier2-empty-p-prefix', ['old'], ['new', ' child', ' \t'], '\told\n', '\tnew\n\t child\n \t\n');
+  add('tier2-does-not-strip-interior-space', ['a b'], ['x'], ' a  b\n', null);
+  add('tier2-does-not-trim-nbsp', ['old'], ['x'], '\u00a0old\n', null);
+  add('tier2-does-not-trim-vertical-tab', ['old'], ['x'], '\vold\n', null);
+  add('all-lines-at-one-tier', ['a', 'b'], ['x'], 'a\n b\n', 'x\n');
+  add('strict-refuses-tier1', ['x'], ['y'], 'x \n', null, true);
+  add('strict-refuses-tier2', ['x'], ['y'], '\tx\n', null, true);
+  add('strict-exact-is-allowed', ['x'], ['y'], 'x\n', 'y\n', true);
+  add('crlf-no-final-kept-away-from-end', ['a'], ['A'], 'a\r\nb', 'A\r\nb');
+  add('first-lf-defines-break-style', ['b\r\r'], ['B'], 'a\nb\r\nc', 'a\nB\nc');
+}
+
 function writeTree(dir: string, files: Tree): void {
   for (const [path, text] of Object.entries(files)) {
     const abs = join(dir, ...path.split('/'));
