@@ -200,7 +200,7 @@ function detect(lines: string[]): string | null {
 
 /** A hunk of a unified-diff section: its old start line A and its body (section 6). */
 interface UnifiedHunk {
-  a: number;
+  a: bigint;
   body: BodyLine[];
 }
 
@@ -294,7 +294,7 @@ function parseUnifiedSection(lines: string[], start: number, section: UnifiedSec
         break;
       }
       while (raw.length > 0 && raw[raw.length - 1] === '') raw.pop();
-      section.hunks.push({ a: Number(m[1]), body: bodyFromRaw(raw) });
+      section.hunks.push({ a: BigInt(m[1]!), body: bodyFromRaw(raw) });
       i = j;
       continue;
     }
@@ -337,15 +337,20 @@ function applyUnifiedHunks(file: TextFile, hunks: UnifiedHunk[], strict: boolean
     let tier = 0;
     let matched: string[] = [];
     if (o.length === 0) {
-      pos = Math.min(Math.max(hunk.a + d, 0), cur.length);
+      const target = hunk.a + BigInt(d);
+      pos = target < 0n ? 0 : target > BigInt(cur.length) ? cur.length : Number(target);
     } else {
       const found = tierOf(cur, o, strict);
       if (found === null) throw new Fail('no-match', path);
       tier = found.tier;
-      const target = hunk.a - 1 + d;
+      const target = hunk.a - 1n + BigInt(d);
+      const distance = (at: number): bigint => {
+        const delta = BigInt(at) - target;
+        return delta < 0n ? -delta : delta;
+      };
       pos = found.at[0]!;
       for (const at of found.at) {
-        if (Math.abs(at - target) < Math.abs(pos - target)) pos = at;
+        if (distance(at) < distance(pos)) pos = at;
       }
       matched = cur.slice(pos, pos + o.length);
     }
@@ -361,9 +366,14 @@ function applyUnifiedHunks(file: TextFile, hunks: UnifiedHunk[], strict: boolean
 function unifiedEdit(section: UnifiedSection, strict: boolean): Edit {
   const oldPath = section.hasPair ? section.pairOld : section.hasRenameOld ? section.renameOld : section.diffOld;
   const newPath = section.hasPair ? section.pairNew : section.hasRenameNew ? section.renameNew : section.diffNew;
+  const checkPaths = (): void => {
+    if (oldPath !== null && !safe(oldPath)) throw new Fail('unsafe', oldPath);
+    if (newPath !== null && !safe(newPath)) throw new Fail('unsafe', newPath);
+  };
   if (section.newMode || oldPath === null) {
     const path = newPath ?? '';
     return (tree) => {
+      checkPaths();
       if (!safe(path)) throw new Fail('unsafe', path);
       if (tree.get(path) !== null) throw new Fail('exists', path);
       const plus: string[] = [];
@@ -382,6 +392,7 @@ function unifiedEdit(section: UnifiedSection, strict: boolean): Edit {
   if (section.delMode || newPath === null) {
     const path = oldPath ?? '';
     return (tree) => {
+      checkPaths();
       if (!safe(path)) throw new Fail('unsafe', path);
       if (tree.get(path) === null) throw new Fail('missing', path);
       tree.now.set(path, null);
@@ -391,8 +402,7 @@ function unifiedEdit(section: UnifiedSection, strict: boolean): Edit {
   const to = newPath!;
   const move = from !== to;
   return (tree) => {
-    if (!safe(from)) throw new Fail('unsafe', from);
-    if (move && !safe(to)) throw new Fail('unsafe', to);
+    checkPaths();
     const before = tree.get(from);
     if (before === null) throw new Fail('missing', from);
     if (move && tree.get(to) !== null) throw new Fail('exists', to);

@@ -50,3 +50,16 @@
   CR requires two CRs before the patch LF because §3 removes exactly one.
 - Safety is the lexical predicate in §3. The specification does not mention
   symlinks; no additional symlink refusal or error code is invented.
+
+### Fix group: unified safety and coordinates
+
+- Reproduced six safety failures: creation/deletion mode sections omitted the
+  other effective endpoint, allowing an unsafe path or reporting exists/missing
+  before unsafe. Both non-null effective endpoints are now validated first.
+- Reproduced incorrect nearest-occurrence selection with a 400-digit hunk
+  coordinate. §6 gives no numeric bound: coordinates and distance comparisons
+  now use exact integers; insertion converts to a number only after clamping.
+- Added header precedence/fallback, prefix, creation/deletion semantics, context
+  preservation, marker association, overlap, negative offset and parser cases.
+- §6's deletion “hunks are not read” means no content matching/application;
+  the unconditional malformed-`@@` syntax requirement still applies.
